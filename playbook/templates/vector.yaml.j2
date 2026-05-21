@@ -1,0 +1,14 @@
+sources:
+  demo_logs:
+    type: demo_logs
+    format: apache_common
+    interval: 1
+
+sinks:
+  clickhouse:
+    type: clickhouse
+    inputs: ["demo_logs"]
+    database: logs
+    table: vector_logs
+    endpoint: http://51.250.94.255:8123
+    compression: gzip

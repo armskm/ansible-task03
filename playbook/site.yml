@@ -1,0 +1,84 @@
+---
+- name: Install Clickhouse
+  hosts: clickhouse
+  handlers:
+    - name: Start clickhouse service
+      become: true
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: restarted
+  tasks:
+    - block:
+        - name: Get clickhouse distrib
+          ansible.builtin.get_url:
+            url: "https://packages.clickhouse.com/deb/pool/main/c/{{ item }}/{{ item }}_{{ clickhouse_version }}_all.deb"
+            dest: "./{{ item }}-{{ clickhouse_version }}.deb"
+          with_items: "{{ clickhouse_packages }}"
+      rescue:
+        - name: Get clickhouse distrib
+          ansible.builtin.get_url:
+            url: "https://packages.clickhouse.com/deb/pool/main/c/clickhouse-common-static/clickhouse-common-static_{{ clickhouse_version }}_amd64.deb"
+            dest: "./clickhouse-common-static-{{ clickhouse_version }}.deb"
+    - name: Install clickhouse packages
+      become: true
+      ansible.builtin.apt:
+        deb: "./{{ item }}"
+      loop:
+        - "clickhouse-common-static-{{ clickhouse_version }}.deb"
+        - "clickhouse-client-{{ clickhouse_version }}.deb"
+        - "clickhouse-server-{{ clickhouse_version }}.deb"
+      notify: Start clickhouse service
+    - name: Flush handlers
+      meta: flush_handlers
+    - name: Wait for ClickHouse server to be ready
+      ansible.builtin.wait_for:
+        port: 8123          # Стандартный HTTP-порт для подключения
+        host: "localhost"
+        delay: 10           # Подождать 10 секунд перед первой проверкой
+        timeout: 60         # Общее время ожидания в секундах
+    - name: Create database
+      ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
+      register: create_db
+      failed_when: create_db.rc != 0 and create_db.rc !=82
+      changed_when: create_db.rc == 0
+    - name: Allow ClickHouse to listen on all interfaces
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/clickhouse-server/config.xml
+        regexp: '<listen_host>'
+        insertafter: '<listen_host>::</listen_host>'
+        line: '<listen_host>0.0.0.0</listen_host>'
+      notify: Start clickhouse service
+
+- name: Install Vector
+  hosts: vector
+  handlers:
+    - name: Start Vector service
+      become: true
+      ansible.builtin.service:
+        name: vector
+        state: restarted
+  tasks:
+    - name: Get vector distrib
+      ansible.builtin.get_url:
+            url: "https://packages.timber.io/vector/{{ vector_version }}/vector_{{ vector_version }}-1_amd64.deb"
+            dest: "./vector-{{ vector_version }}.deb"
+    - name: Install vector packages
+      become: true
+      ansible.builtin.apt:
+        deb: "./vector-{{ vector_version }}.deb"
+      notify: Start Vector service
+    - name: Flush handlers
+      meta: flush_handlers
+    - name: Deploy Vector configuration
+      become: true
+      ansible.builtin.template:
+        src: vector.yaml.j2
+        dest: /etc/vector/vector.yaml
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Start Vector service
+
+    - name: Flush handlers to apply config and restart Vector
+      meta: flush_handlers
