@@ -43,7 +43,7 @@
       changed_when: create_db.rc == 0
     - name: Allow ClickHouse to listen on all interfaces
       become: true
-      ansible.builtin.lineinfile:
+      ansible.builtin.replace:
         path: /etc/clickhouse-server/config.xml
         regexp: '<!--[[:space:]]*<listen_host>0\.0\.0\.0</listen_host>[[:space:]]*-->'
         replace: '<listen_host>0.0.0.0</listen_host>'
