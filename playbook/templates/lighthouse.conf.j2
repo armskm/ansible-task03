@@ -1,0 +1,18 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /var/www/lighthouse;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location /clickhouse/ {
+        # Проксируем запросы к ClickHouse
+        proxy_pass http://{{ clickhouse_host }}:8123/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}

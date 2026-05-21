@@ -7,6 +7,7 @@
       ansible.builtin.service:
         name: clickhouse-server
         state: restarted
+
   tasks:
     - block:
         - name: Get clickhouse distrib
@@ -19,6 +20,7 @@
           ansible.builtin.get_url:
             url: "https://packages.clickhouse.com/deb/pool/main/c/clickhouse-common-static/clickhouse-common-static_{{ clickhouse_version }}_amd64.deb"
             dest: "./clickhouse-common-static-{{ clickhouse_version }}.deb"
+    
     - name: Install clickhouse packages
       become: true
       ansible.builtin.apt:
@@ -28,19 +30,23 @@
         - "clickhouse-client-{{ clickhouse_version }}.deb"
         - "clickhouse-server-{{ clickhouse_version }}.deb"
       notify: Start clickhouse service
+    
     - name: Flush handlers
       meta: flush_handlers
+    
     - name: Wait for ClickHouse server to be ready
       ansible.builtin.wait_for:
         port: 8123
         host: "localhost"
         delay: 10
         timeout: 60
+    
     - name: Create database
       ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
       register: create_db
       failed_when: create_db.rc != 0 and create_db.rc !=82
       changed_when: create_db.rc == 0
+    
     - name: Allow ClickHouse to listen on all interfaces
       become: true
       ansible.builtin.lineinfile:
@@ -58,18 +64,22 @@
       ansible.builtin.service:
         name: vector
         state: restarted
+  
   tasks:
     - name: Get vector distrib
       ansible.builtin.get_url:
             url: "https://packages.timber.io/vector/{{ vector_version }}/vector_{{ vector_version }}-1_amd64.deb"
             dest: "./vector-{{ vector_version }}.deb"
+    
     - name: Install vector packages
       become: true
       ansible.builtin.apt:
         deb: "./vector-{{ vector_version }}.deb"
       notify: Start Vector service
+    
     - name: Flush handlers
       meta: flush_handlers
+   
     - name: Deploy Vector configuration
       become: true
       ansible.builtin.template:
@@ -82,3 +92,64 @@
 
     - name: Flush handlers to apply config and restart Vector
       meta: flush_handlers
+
+- name: Install Lighthouse
+  hosts: lighthouse
+  become: true
+
+  handlers:
+    - name: Restart Nginx service
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+  tasks:
+    - name: Install Nginx and Git
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - git
+        state: present
+        update_cache: yes
+
+    - name: Clone Lighthouse repository
+      ansible.builtin.git:
+        repo: 'https://github.com/VKCOM/lighthouse.git'
+        dest: /var/www/lighthouse
+        version: master
+        depth: 1
+
+    - name: Set ownership for Lighthouse directory
+      ansible.builtin.file:
+        path: /var/www/lighthouse
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    - name: Deploy Nginx configuration for Lighthouse
+      ansible.builtin.template:
+        src: lighthouse.conf.j2
+        dest: /etc/nginx/sites-available/lighthouse
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart Nginx service
+
+    - name: Enable Lighthouse site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/lighthouse
+        dest: /etc/nginx/sites-enabled/lighthouse
+        state: link
+      notify: Restart Nginx service
+
+    - name: Remove default Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Restart Nginx service
+
+    - name: Start and enable Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
