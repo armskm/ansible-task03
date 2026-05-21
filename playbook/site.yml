@@ -45,9 +45,8 @@
       become: true
       ansible.builtin.lineinfile:
         path: /etc/clickhouse-server/config.xml
-        regexp: '<listen_host>'
-        insertafter: '<listen_host>::</listen_host>'
-        line: '<listen_host>0.0.0.0</listen_host>'
+        regexp: '<!--[[:space:]]*<listen_host>0\.0\.0\.0</listen_host>[[:space:]]*-->'
+        replace: '<listen_host>0.0.0.0</listen_host>'
       notify: Start clickhouse service
 
 - name: Install Vector
