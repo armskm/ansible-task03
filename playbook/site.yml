@@ -32,10 +32,10 @@
       meta: flush_handlers
     - name: Wait for ClickHouse server to be ready
       ansible.builtin.wait_for:
-        port: 8123          # Стандартный HTTP-порт для подключения
+        port: 8123
         host: "localhost"
-        delay: 10           # Подождать 10 секунд перед первой проверкой
-        timeout: 60         # Общее время ожидания в секундах
+        delay: 10
+        timeout: 60
     - name: Create database
       ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
       register: create_db
