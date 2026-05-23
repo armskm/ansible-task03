@@ -69,6 +69,24 @@
       tags:
         - clickhouse
         - db
+
+    - name: Create table
+      ansible.builtin.command: |
+        clickhouse-client -q "
+          CREATE TABLE logs.vector_logs (
+            timestamp DateTime64(9) DEFAULT now64(),
+            message String,
+            source String,
+            host String
+          ) ENGINE = MergeTree()
+          ORDER BY timestamp;
+        "
+      register: create_table
+      failed_when: create_table.rc != 0 and create_table.rc != 82
+      changed_when: create_table.rc == 0
+      tags:
+        - clickhouse
+        - table
     
 - name: Install Vector
   hosts: vector

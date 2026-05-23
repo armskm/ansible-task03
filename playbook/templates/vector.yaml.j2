@@ -13,4 +13,6 @@ sinks:
     database: logs
     table: vector_logs
     endpoint: http://{{ clickhouse_host }}:8123
-    format: json_each_row
+    encoding:
+      timestamp_format: unix
+    skip_unknown_fields: true
