@@ -6,7 +6,7 @@
     - name: Start clickhouse service
       ansible.builtin.service:
         name: clickhouse-server
-        state: restarted
+        state: started
       tags:
         - clickhouse
         - start service
@@ -30,11 +30,20 @@
       ansible.builtin.command:
         cmd: "dpkg -i /tmp/{{ item }}-{{ clickhouse_version }}_amd64.deb"
       with_items: "{{ clickhouse_packages }}"
-      notify: Start clickhouse service
       changed_when: false
       tags:
         - clickhouse
         - distr
+
+    - name: Allow ClickHouse to listen on all interfaces
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/clickhouse-server/config.xml
+        regexp: '<!--[[:space:]]*<listen_host>0\.0\.0\.0</listen_host>[[:space:]]*-->'
+        insertafter: '<!-- <listen_host>::</listen_host> -->'
+        # line: '<listen_host>0.0.0.0</listen_host>'
+        line: '<listen_host>::</listen_host>'
+      notify: Start clickhouse service
 
     - name: Flush handlers
       ansible.builtin.meta: flush_handlers
@@ -45,9 +54,9 @@
     - name: Wait for clickhouse-server to be ready
       ansible.builtin.wait_for:
         host: localhost
-        port: 9000
+        port: 8123
         delay: 10
-        timeout: 300
+        timeout: 60
       tags:
         - clickhouse
         - wait
@@ -61,16 +70,6 @@
         - clickhouse
         - db
     
-    - name: Allow ClickHouse to listen on all interfaces
-      become: true
-      ansible.builtin.lineinfile:
-        path: /etc/clickhouse-server/config.xml
-        regexp: '<!--[[:space:]]*<listen_host>0\.0\.0\.0</listen_host>[[:space:]]*-->'
-        insertafter: '<!-- <listen_host>::</listen_host> -->'
-        # line: '<listen_host>0.0.0.0</listen_host>'
-        line: '<listen_host>::</listen_host>'
-      notify: Start clickhouse service
-
 - name: Install Vector
   hosts: vector
   become: true

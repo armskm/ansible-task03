@@ -12,5 +12,5 @@ sinks:
     compression: gzip
     database: logs
     table: vector_logs
-    endpoints: http://{{ clickhouse_host }}:8123
+    endpoint: http://{{ clickhouse_host }}:8123
     format: json_each_row
