@@ -177,6 +177,7 @@
         dest: /var/www/lighthouse
         version: master
         depth: 1
+        update: no
       tags:
         - Lighthouse
         - distr
