@@ -7,8 +7,10 @@ sources:
 sinks:
   clickhouse:
     type: clickhouse
-    inputs: ["demo_logs"]
+    inputs:
+      - demo_logs
+    compression: gzip
     database: logs
     table: vector_logs
-    endpoint: http://10.0.1.19:8123
-    compression: gzip
+    endpoints: http://{{ clickhouse_host }}:8123
+    format: json_each_row

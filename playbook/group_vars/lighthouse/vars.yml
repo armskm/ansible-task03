@@ -2,4 +2,3 @@
 lighthouse_version: "master"
 lighthouse_install_dir: "/var/www/lighthouse"
 nginx_user: "www-data"
-clickhouse_host: "10.0.1.19"

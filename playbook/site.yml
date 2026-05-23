@@ -1,51 +1,65 @@
 ---
 - name: Install Clickhouse
   hosts: clickhouse
+  become: true
   handlers:
     - name: Start clickhouse service
-      become: true
       ansible.builtin.service:
         name: clickhouse-server
         state: restarted
+      tags:
+        - clickhouse
+        - start service
 
   tasks:
-    - block:
-        - name: Get clickhouse distrib
-          ansible.builtin.get_url:
-            url: "https://packages.clickhouse.com/deb/pool/main/c/{{ item }}/{{ item }}_{{ clickhouse_version }}_all.deb"
-            dest: "./{{ item }}-{{ clickhouse_version }}.deb"
-          with_items: "{{ clickhouse_packages }}"
-      rescue:
-        - name: Get clickhouse distrib
-          ansible.builtin.get_url:
-            url: "https://packages.clickhouse.com/deb/pool/main/c/clickhouse-common-static/clickhouse-common-static_{{ clickhouse_version }}_amd64.deb"
-            dest: "./clickhouse-common-static-{{ clickhouse_version }}.deb"
+    - name: Get clickhouse distrib
+      ansible.builtin.get_url:
+        url: "https://packages.clickhouse.com/deb/pool/main/c/{{ item }}/{{ item }}_{{ clickhouse_version }}_amd64.deb"
+        dest: "/tmp/{{ item }}-{{ clickhouse_version }}_amd64.deb"
+        mode: '0644'
+      with_items: "{{ clickhouse_packages }}"
+      tags:
+        - clickhouse
+        - distr
     
-    - name: Install clickhouse packages
-      become: true
+    - name: Update apt cache
       ansible.builtin.apt:
-        deb: "./{{ item }}"
-      loop:
-        - "clickhouse-common-static-{{ clickhouse_version }}.deb"
-        - "clickhouse-client-{{ clickhouse_version }}.deb"
-        - "clickhouse-server-{{ clickhouse_version }}.deb"
+        update_cache: true
+
+    - name: Install clickhouse packages
+      ansible.builtin.command:
+        cmd: "dpkg -i /tmp/{{ item }}-{{ clickhouse_version }}_amd64.deb"
+      with_items: "{{ clickhouse_packages }}"
       notify: Start clickhouse service
-    
+      changed_when: false
+      tags:
+        - clickhouse
+        - distr
+
     - name: Flush handlers
-      meta: flush_handlers
+      ansible.builtin.meta: flush_handlers
+      tags:
+        - clickhouse
+        - start service
     
-    - name: Wait for ClickHouse server to be ready
+    - name: Wait for clickhouse-server to be ready
       ansible.builtin.wait_for:
-        port: 8123
-        host: "localhost"
+        host: localhost
+        port: 9000
         delay: 10
-        timeout: 60
+        timeout: 300
+      tags:
+        - clickhouse
+        - wait
     
     - name: Create database
       ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
       register: create_db
-      failed_when: create_db.rc != 0 and create_db.rc !=82
+      failed_when: create_db.rc != 0 and create_db.rc != 82
       changed_when: create_db.rc == 0
+      tags:
+        - clickhouse
+        - db
     
     - name: Allow ClickHouse to listen on all interfaces
       become: true
@@ -53,55 +67,71 @@
         path: /etc/clickhouse-server/config.xml
         regexp: '<!--[[:space:]]*<listen_host>0\.0\.0\.0</listen_host>[[:space:]]*-->'
         insertafter: '<!-- <listen_host>::</listen_host> -->'
-        line: '<listen_host>0.0.0.0</listen_host>'
+        # line: '<listen_host>0.0.0.0</listen_host>'
+        line: '<listen_host>::</listen_host>'
       notify: Start clickhouse service
 
 - name: Install Vector
   hosts: vector
+  become: true
   handlers:
     - name: Start Vector service
-      become: true
       ansible.builtin.service:
         name: vector
         state: restarted
+      tags:
+        - vector
+        - restart service
   
   tasks:
     - name: Get vector distrib
       ansible.builtin.get_url:
-            url: "https://packages.timber.io/vector/{{ vector_version }}/vector_{{ vector_version }}-1_amd64.deb"
-            dest: "./vector-{{ vector_version }}.deb"
-    
-    - name: Install vector packages
-      become: true
-      ansible.builtin.apt:
-        deb: "./vector-{{ vector_version }}.deb"
-      notify: Start Vector service
-    
-    - name: Flush handlers
-      meta: flush_handlers
-   
-    - name: Deploy Vector configuration
-      become: true
-      ansible.builtin.template:
-        src: vector.yaml.j2
-        dest: /etc/vector/vector.yaml
-        owner: root
-        group: root
+        url: "https://packages.timber.io/vector/{{ vector_version }}/vector_{{ vector_version }}-1_amd64.deb"
+        dest: "/tmp/vector-{{ vector_version }}.deb"
         mode: '0644'
-      notify: Start Vector service
+      tags:
+        - vector
+        - distr
 
-    - name: Flush handlers to apply config and restart Vector
-      meta: flush_handlers
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+    
+    - name: Install vector
+      ansible.builtin.command:
+        cmd: "dpkg -i /tmp/vector-{{ vector_version }}.deb"
+      changed_when: false
+      tags:
+        - vector
+        - distr
+
+    - name: Deploy vector configuration
+      ansible.builtin.template:
+        src: templates/vector.yaml.j2
+        dest: "{{ vector_config_path }}"
+        mode: '0644'
+      notify: Start vector service
+      tags:
+        - vector
+        - config
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+      tags:
+        - vector
+        - restart service
 
 - name: Install Lighthouse
   hosts: lighthouse
   become: true
-
   handlers:
     - name: Restart Nginx service
       ansible.builtin.service:
         name: nginx
         state: restarted
+      tags:
+        - Lighthouse
+        - restart service Nginx
 
   tasks:
     - name: Install Nginx and Git
@@ -111,6 +141,18 @@
           - git
         state: present
         update_cache: yes
+      tags:
+        - Lighthouse
+        - distr
+
+    - name: Start and enable Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+      tags:
+        - Lighthouse
+        - distr
 
     - name: Clone Lighthouse repository
       ansible.builtin.git:
@@ -118,6 +160,9 @@
         dest: /var/www/lighthouse
         version: master
         depth: 1
+      tags:
+        - Lighthouse
+        - distr
 
     - name: Set ownership for Lighthouse directory
       ansible.builtin.file:
@@ -125,6 +170,9 @@
         owner: www-data
         group: www-data
         recurse: yes
+      tags:
+        - Lighthouse
+        - distr
 
     - name: Deploy Nginx configuration for Lighthouse
       ansible.builtin.template:
@@ -134,6 +182,9 @@
         group: root
         mode: '0644'
       notify: Restart Nginx service
+      tags:
+        - Lighthouse
+        - config nginx
 
     - name: Enable Lighthouse site
       ansible.builtin.file:
@@ -141,15 +192,15 @@
         dest: /etc/nginx/sites-enabled/lighthouse
         state: link
       notify: Restart Nginx service
+      tags:
+        - Lighthouse
+        - distr
 
     - name: Remove default Nginx site
       ansible.builtin.file:
         path: /etc/nginx/sites-enabled/default
         state: absent
       notify: Restart Nginx service
-
-    - name: Start and enable Nginx
-      ansible.builtin.service:
-        name: nginx
-        state: started
-        enabled: yes
+      tags:
+        - Lighthouse
+        - distr
